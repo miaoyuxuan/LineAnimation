@@ -11,6 +11,4 @@ target 'LineAnimation' do
   pod 'AMapNavi'
   pod 'AMapSearch'
   pod 'AMapLocation' #定位功能
-  pod 'SVProgressHUD'
-  spod 'Toast'
 end
