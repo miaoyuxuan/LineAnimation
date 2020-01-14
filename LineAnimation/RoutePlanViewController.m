@@ -28,7 +28,6 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
 @property (strong, nonatomic) AMapStep *step;  //路径规划信息
 @property (strong, nonatomic) MANaviRoute * naviRoute;  //用于显示当前路线方案.
 @property (assign, nonatomic) NSUInteger totalRouteNums;  //总共规划的线路的条数
-@property (assign, nonatomic) NSUInteger currentRouteIndex; //当前显示线路的索引值，从0开始
 ///车头方向跟随转动
 @property (nonatomic, strong) MovingAnnotationView *car1;
 ///全轨迹overlay
@@ -550,7 +549,7 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
     AMapGeoPoint *endPoint = [AMapGeoPoint locationWithLatitude:self.destinationAnnotation.coordinate.latitude longitude:self.destinationAnnotation.coordinate.longitude];  //终点
     
     //根据已经规划的路径，起点，终点，规划类型，是否显示实时路况，生成显示方案
-    self.naviRoute = [MANaviRoute naviRouteForPath:self.route.paths[self.currentRouteIndex] withNaviType:type showTraffic:NO startPoint:startPoint endPoint:endPoint];
+    self.naviRoute = [MANaviRoute naviRouteForPath:self.route.paths[0] withNaviType:type showTraffic:NO startPoint:startPoint endPoint:endPoint];
     
     [self.naviRoute addToMapView:self.mapView];  //显示到地图上
     
