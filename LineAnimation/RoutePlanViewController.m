@@ -15,7 +15,8 @@ static const NSInteger RoutePlanningPaddingEdge = 110;
 static const NSString *RoutePlanningViewControllerStartTitle = @"起点";
 static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
 
-@interface RoutePlanViewController ()<MAMapViewDelegate,AMapSearchDelegate,UITextFieldDelegate>
+@interface RoutePlanViewController ()<MAMapViewDelegate,AMapSearchDelegate,UITextFieldDelegate,AMapNaviDriveViewDelegate,AMapNaviDriveManagerDelegate>
+
 
 @property (nonatomic, strong) MAMapView *mapView;
 @property (nonatomic, strong) AMapSearchAPI *search;
@@ -42,6 +43,13 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
 @property (nonatomic, strong) UITextField *poiNameSearchTextField;
 @property (nonatomic, strong) NSMutableArray *tips;
 @property (nonatomic, strong) AMapLocationManager *locationManager;
+@property (nonatomic, strong) NSMutableArray *userLocationArr;
+@property (nonatomic, strong) AMapNaviDriveView * driveView;
+@property (nonatomic, strong) AMapNaviDriveManager *driveManager;
+@property (nonatomic, strong) AMapNaviPoint *startPoint;
+@property (nonatomic, strong) AMapNaviPoint *endPoint;
+@property (nonatomic, strong) MANaviPolyline *naviPolyline;
+@property (nonatomic, strong) MAPolylineRenderer *polylineRenderer;
 @end
 
 @implementation RoutePlanViewController
@@ -63,6 +71,11 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
     
     [self addDefaultAnnotations];
     
+    // MARK: 懒加载driveManager
+    [self initDriveManager];
+    
+    // MARK: 懒加载导航视图
+    [self initDriveView];
 }
 
 - (void)initTextField {
@@ -93,12 +106,26 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
     self.pauseBtn = btn3;
     [self.view addSubview:btn3];
     
-    UIButton *btn4 = [[UIButton alloc] initWithFrame:CGRectMake(UIScreen.mainScreen.bounds.size.width - 100, UIScreen.mainScreen.bounds.size.height - 400, 50, 50)];
+    UIButton *btn4 = [[UIButton alloc] initWithFrame:CGRectMake(UIScreen.mainScreen.bounds.size.width - 100, UIScreen.mainScreen.bounds.size.height - 500, 50, 50)];
     btn4.backgroundColor = [UIColor systemBlueColor];
     [btn4 setTitle:@"路径规划" forState:UIControlStateNormal];
     btn4.titleLabel.font = [UIFont systemFontOfSize:12];
     [btn4 addTarget:self action:@selector(btn4Click) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:btn4];
+    
+    UIButton *btn5 = [[UIButton alloc] initWithFrame:CGRectMake(UIScreen.mainScreen.bounds.size.width - 100, UIScreen.mainScreen.bounds.size.height - 400, 50, 50)];
+    btn5.backgroundColor = [UIColor systemBlueColor];
+    [btn5 setTitle:@"实时导航" forState:UIControlStateNormal];
+    btn5.titleLabel.font = [UIFont systemFontOfSize:12];
+    [btn5 addTarget:self action:@selector(btn5Click) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:btn5];
+    
+    UIButton *btn6 = [[UIButton alloc] initWithFrame:CGRectMake(50, UIScreen.mainScreen.bounds.size.height - 100, 50, 50)];
+    btn6.backgroundColor = [UIColor systemBlueColor];
+    [btn6 setTitle:@"清除数据" forState:UIControlStateNormal];
+    btn6.titleLabel.font = [UIFont systemFontOfSize:12];
+    [btn6 addTarget:self action:@selector(btn6Click) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:btn6];
         
 }
    
@@ -186,9 +213,12 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
     
     self.startAnnotation.coordinate = startCoordinate;
     self.destinationAnnotation.coordinate = destinationCoordinate;
+    
+    self.startPoint = [AMapNaviPoint locationWithLatitude:self.startCoordinate.latitude longitude:self.startCoordinate.longitude];
+    self.endPoint   = [AMapNaviPoint locationWithLatitude:self.destinationCoordinate.latitude longitude:self.destinationCoordinate.longitude];
 
-    AMapRidingRouteSearchRequest *navi = [[AMapRidingRouteSearchRequest alloc] init];
-
+    AMapDrivingRouteSearchRequest *navi = [[AMapDrivingRouteSearchRequest alloc] init];
+    
     /* 出发点. */
     navi.origin = [AMapGeoPoint locationWithLatitude:self.startCoordinate.latitude
                                            longitude:self.startCoordinate.longitude];
@@ -196,7 +226,8 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
     navi.destination = [AMapGeoPoint locationWithLatitude:self.destinationCoordinate.latitude
                                                 longitude:self.destinationCoordinate.longitude];
     
-    [self.search AMapRidingRouteSearch:navi];
+    //[self.search AMapRidingRouteSearch:navi];
+    [self.search AMapDrivingRouteSearch:navi];
 }
 
 //在地图上添加起始和终点的标注点
@@ -275,20 +306,20 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
     
     //showTraffic为NO时，不需要带实时路况，路径为单一颜色
     if ([overlay isKindOfClass:[MANaviPolyline class]]) {
-        MANaviPolyline *naviPolyline = (MANaviPolyline *)overlay;
-        MAPolylineRenderer *polylineRenderer = [[MAPolylineRenderer alloc] initWithPolyline:naviPolyline.polyline];
+        _naviPolyline = (MANaviPolyline *)overlay;
+        _polylineRenderer = [[MAPolylineRenderer alloc] initWithPolyline:_naviPolyline.polyline];
         
-        polylineRenderer.lineWidth = 6;
+        _polylineRenderer.lineWidth = 6;
         
-        if (naviPolyline.type == MANaviAnnotationTypeWalking) {
-            polylineRenderer.strokeColor = self.naviRoute.walkingColor;
-        } else if (naviPolyline.type == MANaviAnnotationTypeRailway) {
-            polylineRenderer.strokeColor = self.naviRoute.railwayColor;
+        if (_naviPolyline.type == MANaviAnnotationTypeWalking) {
+            _polylineRenderer.strokeColor = self.naviRoute.walkingColor;
+        } else if (_naviPolyline.type == MANaviAnnotationTypeRailway) {
+            _polylineRenderer.strokeColor = self.naviRoute.railwayColor;
         } else {
-            polylineRenderer.strokeColor = [UIColor systemBlueColor];
+            _polylineRenderer.strokeColor = [UIColor systemBlueColor];
         }
         
-        return polylineRenderer;
+        return _polylineRenderer;
     }
     
     //showTraffic为YES时，需要带实时路况，路径为多颜色渐变
@@ -305,7 +336,7 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
         MAPolylineRenderer *polylineView = [[MAPolylineRenderer alloc] initWithPolyline:overlay];
         
         polylineView.lineWidth   = 6.f;
-        polylineView.strokeColor = [UIColor whiteColor];
+        polylineView.strokeColor = [UIColor redColor];
         
         return polylineView;
     }
@@ -499,15 +530,15 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
     [self.mapView addAnnotations:poiAnnotations];
     
     /* 如果只有一个结果，设置其为中心点. */
-    if (poiAnnotations.count == 1)
-    {
-        [self.mapView setCenterCoordinate:[poiAnnotations[0] coordinate]];
-    }
-    /* 如果有多个结果, 设置地图使所有的annotation都可见. */
-    else
-    {
+//    if (poiAnnotations.count == 1)
+//    {
+//        [self.mapView setCenterCoordinate:[poiAnnotations[0] coordinate]];
+//    }
+//    /* 如果有多个结果, 设置地图使所有的annotation都可见. */
+//    else
+//    {
         [self.mapView showAnnotations:poiAnnotations animated:NO];
-    }
+    //}
     
 }
 
@@ -533,6 +564,15 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
         }];
 }
 
+- (void)mapView:(MAMapView *)mapView didUpdateUserLocation:(MAUserLocation *)userLocation updatingLocation:(BOOL)updatingLocation {
+//    [self.view makeToast:[NSString stringWithFormat:@"%f",userLocation.coordinate.latitude]];
+//    NSString *str = [NSString stringWithFormat:@"%f,%f",userLocation.coordinate.longitude,userLocation.coordinate.latitude];
+//    if (![self.userLocationArr containsObject:str]) {
+//        [self.userLocationArr addObject:str];
+//        [self  removeCar1TraveledRoute:self.userLocationArr];
+//    }
+}
+
 //在地图上显示当前选择的路径
 - (void)onRouteSearchDone {
     
@@ -555,7 +595,6 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
     
     [SVProgressHUD dismiss];
     
-    
 }
 
 - (void)removeCar1TraveledRoute:(NSMutableArray *)stepArray {
@@ -576,14 +615,17 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
        if(self.fullTraceLine) {
            [self.mapView removeOverlay:self.fullTraceLine];
        }
+    
        int needCount = self.car1passedTraceCoordIndex + 2;
        CLLocationCoordinate2D *coords = malloc(sizeof(CLLocationCoordinate2D) * needCount);
 
        memcpy(coords, pathCoors, sizeof(CLLocationCoordinate2D) * (self.car1passedTraceCoordIndex + 1));
-       coords[needCount - 1] = self.car1.coordinate;
-       
-       self.fullTraceLine = [MAPolyline polylineWithCoordinates:coords count:needCount];
-       [self.mapView addOverlay:self.fullTraceLine];
+       //coords[needCount - 1] = self.car1.coordinate;
+      // coords[needCount - 1] = pathCoors[needCount - 1];
+       self.fullTraceLine = [MAPolyline polylineWithCoordinates:pathCoors  count:stepArray.count];
+    
+         [self.mapView addOverlay:self.fullTraceLine];
+      
 
        if(coords) {
            free(coords);
@@ -609,7 +651,7 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
     
     __weak typeof(self)weakSelf = self;
     double speed_car1 = car1Speed;
-    int count = sizeof(pathCoors) / sizeof(pathCoors[0]);
+    int count = (int)sizeof(pathCoors) / sizeof(pathCoors[0]);
 
     [self.car1 setCoordinate:pathCoors[0]];
     self.car1passedTraceCoordIndex = 0;
@@ -661,6 +703,13 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
 
 - (void)btn4Click {
     
+    if (!self.destinationCoordinate.latitude || !self.destinationCoordinate.longitude) {
+        
+        [self.view makeToast:@"请先选择路径嗷" duration:1.0 position:CSToastPositionCenter];
+        
+        return;
+    }
+    
     if (self.car1) {
         [self.mapView removeAnnotation:self.car1];
     }
@@ -673,33 +722,55 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
     [SVProgressHUD setDefaultMaskType:SVProgressHUDMaskTypeGradient];
     
     [self setUpPosition:self.startCoordinate destinationCoordinate:self.destinationCoordinate];
+    
+}
+
+- (void)btn5Click {
+    
+    if (!self.driveManager || !self.startPoint || !self.endPoint) {
+        
+        [self.view makeToast:@"请先选择路径嗷" duration:1.0 position:CSToastPositionCenter];
+        
+        return;
+    }
+    
+    [SVProgressHUD show];
+    
+    // 开始计算起始点路径
+    [self.driveManager calculateDriveRouteWithStartPoints:@[self.startPoint] endPoints:@[self.endPoint] wayPoints:nil drivingStrategy:1];
+    
+    // 给driveView设置数据源，加载地图导航数据
+    [self.driveManager addDataRepresentative:self.driveView];
+    
+}
+
+- (void)btn6Click {
+    
+    if (self.car1) {
+        [self.mapView removeAnnotation:self.car1];
+    }
+    
+    if (self.mapView.annotations) {
+        [self.mapView removeAnnotations:self.mapView.annotations];
+    }
+    
+    [self.naviRoute removeFromMapView];  //清空地图上已有的路线
+    
+    self.endPoint = nil;
+
+    self.poiNameSearchTextField.text = nil;
+
+    self.destinationCoordinate = CLLocationCoordinate2DMake(0, 0);
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)textField
 {
-//       AMapPOIAroundSearchRequest *request = [[AMapPOIAroundSearchRequest alloc] init];
-//       //request.location = [AMapGeoPoint locationWithLatitude:26.063184 longitude:119.298224];
-//       request.keywords = textField.text;
-//       // types属性表示限定搜索POI的类别，默认为：餐饮服务|商务住宅|生活服务
-//       // POI的类型共分为20种大类别，分别为：
-//       // 汽车服务|汽车销售|汽车维修|摩托车服务|餐饮服务|购物服务|生活服务|体育休闲服务|
-//       // 医疗保健服务|住宿服务|风景名胜|商务住宅|政府机构及社会团体|科教文化服务|
-//       // 交通设施服务|金融保险服务|公司企业|道路附属设施|地名地址信息|公共设施
-//       request.sortrule = 0;
-//       request.radius = 700;
-//       request.requireExtension = YES;
-//
-//       //发起周边搜索
-//       [_search AMapPOIAroundSearch: request];
-    dispatch_async(dispatch_get_main_queue(), ^{
-        AMapInputTipsSearchRequest *tips = [[AMapInputTipsSearchRequest alloc] init];
-        tips.keywords = textField.text;
-        tips.city     = kSearchCity;
-        tips.cityLimit = YES;
-        
-        [self.search AMapInputTipsSearch:tips];
-    });
+    AMapInputTipsSearchRequest *tips = [[AMapInputTipsSearchRequest alloc] init];
+    tips.keywords = textField.text;
+    tips.city     = kSearchCity;
+    tips.cityLimit = YES;
     
+    [self.search AMapInputTipsSearch:tips];
     
     return [textField resignFirstResponder];
 }
@@ -726,6 +797,73 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
         _poiNameSearchTextField.returnKeyType = UIReturnKeySearch;
     }
     return _poiNameSearchTextField;
+}
+
+- (NSMutableArray *)userLocationArr {
+    if (!_userLocationArr) {
+        _userLocationArr = [NSMutableArray new];
+    }
+    return _userLocationArr;
+}
+
+// MARK: 初始化导航界面
+- (void)initDriveView
+{
+    if (self.driveView == nil)
+    {
+        self.driveView = [[AMapNaviDriveView alloc] initWithFrame:self.view.bounds];
+        self.driveView.autoresizingMask = UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
+        [self.driveView setDelegate:self];
+    }
+}
+
+// MARK: 实时监听规划路径的状态
+- (void)driveManagerOnCalculateRouteSuccess:(AMapNaviDriveManager *)driveManager
+{
+    NSLog(@"onCalculateRouteSuccess");
+    
+    [SVProgressHUD dismiss];
+    
+    [self.view addSubview:self.driveView];
+    
+    //算路成功后开始GPS导航
+    [self.driveManager startGPSNavi];
+}
+
+- (void)driveManager:(AMapNaviDriveManager *)driveManager error:(NSError *)error {
+    NSLog(@"onCalculateRouteFail");
+}
+
+- (void)driveViewCloseButtonClicked:(AMapNaviDriveView *)driveView {
+    [[AMapNaviDriveManager sharedInstance] stopNavi];
+//    [[AMapNaviDriveManager sharedInstance] removeDataRepresentative:self.driveView];
+//    [[AMapNaviDriveManager sharedInstance] setDelegate:nil];
+    if (self.driveView) {
+        [self.driveView removeFromSuperview];
+    }
+}
+
+- (void)initDriveManager
+{
+    if (!self.driveManager) {
+        self.driveManager = [AMapNaviDriveManager sharedInstance];
+        self.driveManager.delegate = self;
+        [AMapNaviDriveManager sharedInstance].delegate = self;
+        //将driveView添加为导航数据的Representative，使其可以接收到导航诱导数据
+       // [[AMapNaviDriveManager sharedInstance] addDataRepresentative:self.driveView];
+
+    }
+}
+
+- (void)dealloc
+{
+    [[AMapNaviDriveManager sharedInstance] stopNavi];
+    [[AMapNaviDriveManager sharedInstance] removeDataRepresentative:self.driveView];
+    [[AMapNaviDriveManager sharedInstance] setDelegate:nil];
+    
+    BOOL success = [AMapNaviDriveManager destroyInstance];
+    NSLog(@"单例是否销毁成功 : %d",success);
+    
 }
 
 @end
