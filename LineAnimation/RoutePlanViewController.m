@@ -50,6 +50,8 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
 @property (nonatomic, strong) AMapNaviPoint *endPoint;
 @property (nonatomic, strong) MANaviPolyline *naviPolyline;
 @property (nonatomic, strong) MAPolylineRenderer *polylineRenderer;
+@property (nonatomic, strong) MAPolylineRenderer *drivePolylineRenderer;
+@property (nonatomic, strong) MAPolylineRenderer *polylineView;
 @end
 
 @implementation RoutePlanViewController
@@ -296,12 +298,12 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
     
     //虚线，如需要步行的
     if ([overlay isKindOfClass:[LineDashPolyline class]]) {
-        MAPolylineRenderer *polylineRenderer = [[MAPolylineRenderer alloc] initWithPolyline:((LineDashPolyline *)overlay).polyline];
-        polylineRenderer.lineWidth = 6;
-        polylineRenderer.lineDashType = kMALineDashTypeSquare;
-        polylineRenderer.strokeColor = [UIColor redColor];
+        _drivePolylineRenderer = [[MAPolylineRenderer alloc] initWithPolyline:((LineDashPolyline *)overlay).polyline];
+        _drivePolylineRenderer.lineWidth = 6;
+        _drivePolylineRenderer.lineDashType = kMALineDashTypeSquare;
+        _drivePolylineRenderer.strokeColor = [UIColor redColor];
         
-        return polylineRenderer;
+        return _drivePolylineRenderer;
     }
     
     //showTraffic为NO时，不需要带实时路况，路径为单一颜色
@@ -333,12 +335,11 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
     }
     
     if(overlay == self.fullTraceLine) {
-        MAPolylineRenderer *polylineView = [[MAPolylineRenderer alloc] initWithPolyline:overlay];
+        _polylineView = [[MAPolylineRenderer alloc] initWithPolyline:overlay];
+        _polylineView.lineWidth   = 6.f;
+        _polylineView.strokeColor = [UIColor redColor];
         
-        polylineView.lineWidth   = 6.f;
-        polylineView.strokeColor = [UIColor redColor];
-        
-        return polylineView;
+        return _polylineView;
     }
     
     
@@ -755,6 +756,10 @@ static const NSString *RoutePlanningViewControllerDestinationTitle = @"终点";
     }
     
     [self.naviRoute removeFromMapView];  //清空地图上已有的路线
+    
+    if (self.fullTraceLine) {
+        [self.mapView removeOverlay:self.fullTraceLine];
+    }
     
     self.endPoint = nil;
 
